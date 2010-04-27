@@ -1,0 +1,39 @@
+Coffer
+======
+
+Small package for copying between a memory range managed
+by C code and Go Buffers.  Typical Usage:
+
+import buffer
+import unsafe.coffer
+import io
+
+var startPtr unsafe.Pointer
+var endPtr unsafe.Pointer
+var buf io.Buffer
+
+coffer := coffer.NewCoffer(startPtr, endPtr)
+
+// Read Bytes from C
+buf.ReadFrom(coffer)
+bytes := buf.Bytes() 
+
+// Write Bytes to C
+buf.WriteTo(coffer)
+
+// or
+coffer.Write(buf.Bytes())
+
+// Reset to start of memory range
+coffer.Seek(0, 0)
+
+// Subsequent Read, Write, or Seek will fail
+// Does *NOT* free
+coffer.Close()
+
+// Have fun!
+
+
+
+
+
