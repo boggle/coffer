@@ -79,12 +79,13 @@ func (p *Coffer) EnsureContainsOffset(offset int64) {
 }
 
 // true iff unsafe.Pointer(pos) is contained in memory range
-func (p *Coffer) Contains(pos uintptr) bool {
+func (p *Coffer) Contains(posPtr Pointer) bool {
+  pos := uintptr(posPtr)
   return (pos >= p.start && pos <= p.limit)
 }
 
 // panic(os.EINVAL) iff unsafe.Pointer(pos) is not contained in memory range
-func (p *Coffer) EnsureContains(pos uintptr) {
+func (p *Coffer) EnsureContains(pos Pointer) {
   if p.Contains(pos) {
     return
   }
