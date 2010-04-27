@@ -3,6 +3,7 @@ package coffer
 
 import . "unsafe"
 import os "os"
+// import "fmt"
 
 // #include <stdlib.h>
 // #include <string.h>
@@ -50,14 +51,14 @@ func NewCoffer(startPtr Pointer, limitPtr Pointer) (coffer *Coffer, err os.Error
 // Current Seek position
 func (p *Coffer) Tell() int64 { return int64(p.seek) }
 
-// Size() - 1
+// Cap() - 1
 func (p *Coffer) Diff() uintptr { return p.limit - p.start }
 
-// Size of the managed range, always >= 1
-func (p *Coffer) Size() int64 { return int64(p.limit-p.start) + 1 }
+// Cap of the managed range, always >= 1
+func (p *Coffer) Cap() int64 { return int64(p.limit-p.start) + 1 }
 
 // Remaing bytes to be read or written
-func (p *Coffer) Cap() uintptr { return p.limit - p.seek + 1 }
+func (p *Coffer) Len() uintptr { return p.limit - p.start + 1 - p.seek }
 
 // true, iff EOF was enountered during a previous Read() or Write() call
 //
@@ -133,67 +134,68 @@ func (p *Coffer) Read(dst []uint8) (n int, err os.Error) {
     return 0, os.EOF
   }
 
-  // Ensure copy only if dstCap > 0
+  // Ensure copy only if dstLen > 0
   // assumes sizeof(uintptr) >= sizeof(int) which is the case
-  dstCap := uintptr(len(dst))
-  if dstCap == 0 {
+  dstLen := uintptr(len(dst))
+  if dstLen == 0 {
     return 0, os.EINVAL
   }
 
-  // Ensures copy only if srcCap > 0
-  var srcCap uintptr = p.Cap()
-  if srcCap == 0 {
+  // Ensures copy only if srcLen > 0
+  var srcLen uintptr = p.Len()
+  if srcLen == 0 {
     return 0, os.EINVAL
   }
 
-  // Copy min(dstCap, srcCap) > 0 bytes
+  // Copy min(dstLen, srcLen) > 0 bytes
   srcPtr := Pointer(uintptr(p.start) + uintptr(p.seek))
   dstPtr := Pointer(&dst[0])
-  if srcCap > dstCap {
-    C.memmove(dstPtr, srcPtr, C.size_t(dstCap))
-    p.seek = p.seek + dstCap
-    return int(dstCap), nil
+  if srcLen > dstLen {
+    C.memmove(dstPtr, srcPtr, C.size_t(dstLen))
+    p.seek = p.seek + dstLen
+    return int(dstLen), nil
   }
-  // else srcCap <= dstCap
-  C.memmove(dstPtr, srcPtr, C.size_t(srcCap))
+  // else srcLen <= dstLen
+  C.memmove(dstPtr, srcPtr, C.size_t(srcLen))
   p.seek = p.Diff()
   p.eof = true
-  return int(srcCap), os.EOF
+  return int(srcLen), os.EOF
 }
 
 // Will not append but instead stop with EOF at end of range
 func (p *Coffer) Write(src []uint8) (n int, err os.Error) {
+
   // Bail out if EOF was hit before
   if p.eof || p.fin {
     return 0, os.EOF
   }
 
-  // Ensure copy only if srcCap > 0
+  // Ensure copy only if srcLen > 0
   // assumes sizeof(uintptr) >= sizeof(int) which is the case
-  srcCap := uintptr(len(src))
-  if srcCap == 0 {
+  srcLen := uintptr(len(src))
+  if srcLen == 0 {
     return 0, os.EINVAL
   }
 
-  // Ensures copy only if dstCap > 0
-  var dstCap uintptr = p.Cap()
-  if dstCap == 0 {
+  // Ensures copy only if dstLen > 0
+  var dstLen uintptr = p.Len()
+  if dstLen == 0 {
     return 0, os.EINVAL
   }
 
-  // Copy min(dstCap, srcCap) > 0 bytes
+  // Copy min(dstLen, srcLen) > 0 bytes
   srcPtr := Pointer(&src[0])
   dstPtr := Pointer(uintptr(p.start) + uintptr(p.seek))
-  if srcCap >= dstCap {
-    C.memmove(dstPtr, srcPtr, C.size_t(dstCap))
+  if srcLen >= dstLen {
+    C.memmove(dstPtr, srcPtr, C.size_t(dstLen))
     p.seek = p.Diff()
     p.eof = true
-    return int(dstCap), os.EOF
+    return int(dstLen), os.EOF
   }
-  // else srcCap < dstCap
-  C.memmove(dstPtr, srcPtr, C.size_t(srcCap))
-  p.seek = p.seek + srcCap
-  return int(srcCap), nil
+  // else srcLen < dstLen
+  C.memmove(dstPtr, srcPtr, C.size_t(srcLen))
+  p.seek = p.seek + srcLen
+  return int(srcLen), nil
 }
 
 // Closes this coffer by zeroing all internal fields
