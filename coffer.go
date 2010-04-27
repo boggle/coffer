@@ -13,7 +13,7 @@ import "C"
 //
 // This allows direct copying between a C memory range
 // and a Go Buffer
-// 
+//
 // This struct is not thread-safe
 //
 type Coffer struct {
@@ -27,7 +27,7 @@ type Coffer struct {
   fin bool // if set, coffer has been closed, subsequent Read, Write, Seek will fail
 }
 
-// Creates a new Coffer that allows reading the continous memory range between 
+// Creates a new Coffer that allows reading the continous memory range between
 // startPtr and limitPtr
 //
 // os.EINVAL if startPtr is 0 or startPrt >= limitPtr
@@ -50,11 +50,11 @@ func NewCoffer(startPtr Pointer, limitPtr Pointer) (coffer *Coffer, err os.Error
 // Current Seek position
 func (p *Coffer) Tell() int64 { return int64(p.seek) }
 
-// Size() - 1 
+// Size() - 1
 func (p *Coffer) Diff() uintptr { return p.limit - p.start }
 
 // Size of the managed range, always >= 1
-func (p *Coffer) Size() int64 { return int64(p.limit - p.start) + 1 }
+func (p *Coffer) Size() int64 { return int64(p.limit-p.start) + 1 }
 
 // Remaing bytes to be read or written
 func (p *Coffer) Cap() uintptr { return p.limit - p.seek + 1 }
@@ -116,9 +116,9 @@ func (p *Coffer) SeekPos(whence int, offset int64) (ret int64, err os.Error) {
 //
 // If offset lies outside memory range returns current seek, os.EINVAL
 func (p *Coffer) Seek(whence int, offset int64) (ret int64, err os.Error) {
-	if p.fin {
-		return int64(p.seek), os.EINVAL
-	}
+  if p.fin {
+    return int64(p.seek), os.EINVAL
+  }
   ret, err = p.SeekPos(whence, offset)
   p.EnsureContainsOffset(ret)
   p.seek = uintptr(ret)
@@ -201,13 +201,13 @@ func (p *Coffer) Write(src []uint8) (n int, err os.Error) {
 //
 // Does not free any managed pointers
 func (p *Coffer) Close() os.Error {
-	// Zero ptrs to avoid any lingering harm
-	p.start = uintptr(0)
-	p.limit = uintptr(0)
-	p.seek  = 0
-	p.eof   = true
-	p.fin   = true
-	return nil
+  // Zero ptrs to avoid any lingering harm
+  p.start = uintptr(0)
+  p.limit = uintptr(0)
+  p.seek = 0
+  p.eof = true
+  p.fin = true
+  return nil
 }
 
 // {}
