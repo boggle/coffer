@@ -2,7 +2,11 @@ Coffer
 ======
 
 Small package for copying between a memory range managed
-by C code and Go Buffers.  Typical Usage:
+by C code and Go Buffers.  
+
+Status: Totally untested right now :-)
+
+Typical Usage:
 
 import buffer
 import unsafe.coffer

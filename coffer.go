@@ -1,3 +1,4 @@
+// Package for copying between memory ranges managed by C code and Go Buffers
 package coffer
 
 import . "unsafe"
@@ -7,14 +8,18 @@ import os "os"
 // #include <string.h>
 import "C"
 
-// Transplants ReadWriteSeeker interface on unsafe.Pointer
+// A Coffer implements the io.ReadWriteSeeker interface for
+// a memory range addressed by a pair of unsafe.Pointers
+//
+// This allows direct copying between a C memory range
+// and a Go Buffer
 // 
-// This is inherently not thread-safe
+// This struct is not thread-safe
+//
 type Coffer struct {
   start uintptr // base pointer
   seek  uintptr // offset value
   limit uintptr // pointer to last element
-  diff  uintptr // limit-start
 
   // cant use seek > limit to test for eof due to potential overflow issues
 
@@ -22,10 +27,13 @@ type Coffer struct {
   fin bool // if set, coffer has been closed, subsequent Read, Write, Seek will fail
 }
 
+// Creates a new Coffer that allows reading the continous memory range between 
+// startPtr and limitPtr
+//
+// os.EINVAL if startPtr is 0 or startPrt >= limitPtr
 func NewCoffer(startPtr Pointer, limitPtr Pointer) (coffer *Coffer, err os.Error) {
   start_ := uintptr(startPtr)
   limit_ := uintptr(limitPtr)
-  diff_ := limit_ - start_
   // Makes life easier by avoiding that diff-start+1 could overflow
   // Check Read() and Write()!
   if start_ == uintptr(0) {
@@ -39,18 +47,26 @@ func NewCoffer(startPtr Pointer, limitPtr Pointer) (coffer *Coffer, err os.Error
   return &Coffer{start: start_, limit: limit_, diff: diff_}, nil
 }
 
+// Current Seek position
 func (p *Coffer) Tell() int64 { return int64(p.seek) }
 
+// Size() - 1 
 func (p *Coffer) Diff() uintptr { return p.diff }
 
+// Size of the managed range, always >= 1
 func (p *Coffer) Size() int64 { return int64(p.diff) + 1 }
 
+// true, iff EOF was enountered during a previous Read() or Write() call
+//
+// Seek() resets to false
 func (p *Coffer) IsEOF() bool { return p.eof }
 
+// true, iff offset is contained in managed memory range
 func (p *Coffer) ContainsOffset(offset int64) bool {
   return offset >= 0 && offset <= int64(p.diff)
 }
 
+// panic(os.EINVAL) iff offset is not contained in managed memory range
 func (p *Coffer) EnsureContainsOffset(offset int64) {
   if p.ContainsOffset(offset) {
     return
@@ -59,10 +75,12 @@ func (p *Coffer) EnsureContainsOffset(offset int64) {
   panic(os.EINVAL)
 }
 
+// true iff unsafe.Pointer(pos) is contained in memory range
 func (p *Coffer) Contains(pos uintptr) bool {
   return (pos >= p.start && pos <= p.limit)
 }
 
+// panic(os.EINVAL) iff unsafe.Pointer(pos) is not contained in memory range
 func (p *Coffer) EnsureContains(pos uintptr) {
   if p.Contains(pos) {
     return
@@ -72,6 +90,7 @@ func (p *Coffer) EnsureContains(pos uintptr) {
 }
 
 // Compute an absolute seek position within this Coffer
+// (Parameters as in io.Seek)
 func (p *Coffer) SeekPos(whence int, offset int64) (ret int64, err os.Error) {
   var newOffset int64
   switch whence {
@@ -92,7 +111,7 @@ func (p *Coffer) SeekPos(whence int, offset int64) (ret int64, err os.Error) {
 //
 // Clears EOF state
 //
-// If offset lies outside returns current seek, os.EINVAL
+// If offset lies outside memory range returns current seek, os.EINVAL
 func (p *Coffer) Seek(whence int, offset int64) (ret int64, err os.Error) {
 	if p.fin {
 		return int64(p.seek), os.EINVAL
@@ -138,6 +157,7 @@ func (p *Coffer) Read(dst []uint8) (n int, err os.Error) {
   return int(srcCap), os.EOF
 }
 
+// Will not append but instead stop with EOF at end of range
 func (p *Coffer) Write(src []uint8) (n int, err os.Error) {
   // Bail out if EOF was hit before
   if p.eof || p.fin {
@@ -172,8 +192,13 @@ func (p *Coffer) Write(src []uint8) (n int, err os.Error) {
   return int(srcCap), nil
 }
 
+// Closes this coffer by zeroing all internal fields
+//
+// Cant Read() or Write() or Seek() anymore afterwards
+//
+// Does not free any managed pointers
 func (p *Coffer) Close() os.Error {
-	// Zero's ptrs to avoid any lingering harm
+	// Zero ptrs to avoid any lingering harm
 	p.start = uintptr(0)
 	p.limit = uintptr(0)
 	p.diff  = uintptr(0)
