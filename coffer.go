@@ -23,7 +23,7 @@ type Coffer struct {
 
   // cant use seek > limit to test for eof due to potential overflow issues
 
-  eof bool // if set eof, has been reached, reset via Seak() issues
+  eof bool // if set, has been reached, reset via Seak() issues
   fin bool // if set, coffer has been closed, subsequent Read, Write, Seek will fail
 }
 
@@ -44,17 +44,20 @@ func NewCoffer(startPtr Pointer, limitPtr Pointer) (coffer *Coffer, err os.Error
     err = os.EINVAL
     return
   }
-  return &Coffer{start: start_, limit: limit_, diff: diff_}, nil
+  return &Coffer{start: start_, limit: limit_}, nil
 }
 
 // Current Seek position
 func (p *Coffer) Tell() int64 { return int64(p.seek) }
 
 // Size() - 1 
-func (p *Coffer) Diff() uintptr { return p.diff }
+func (p *Coffer) Diff() uintptr { return p.limit - p.start }
 
 // Size of the managed range, always >= 1
-func (p *Coffer) Size() int64 { return int64(p.diff) + 1 }
+func (p *Coffer) Size() int64 { return int64(p.limit - p.start) + 1 }
+
+// Remaing bytes to be read or written
+func (p *Coffer) Cap() uintptr { return p.limit - p.seek + 1 }
 
 // true, iff EOF was enountered during a previous Read() or Write() call
 //
@@ -63,7 +66,7 @@ func (p *Coffer) IsEOF() bool { return p.eof }
 
 // true, iff offset is contained in managed memory range
 func (p *Coffer) ContainsOffset(offset int64) bool {
-  return offset >= 0 && offset <= int64(p.diff)
+  return offset >= 0 && offset <= int64(p.Diff())
 }
 
 // panic(os.EINVAL) iff offset is not contained in managed memory range
@@ -101,7 +104,7 @@ func (p *Coffer) SeekPos(whence int, offset int64) (ret int64, err os.Error) {
   case 1:
     newOffset = int64(p.seek) + offset
   case 2:
-    newOffset = int64(p.diff) + offset
+    newOffset = int64(p.Diff()) + offset
   }
   return newOffset, nil
 }
@@ -137,7 +140,7 @@ func (p *Coffer) Read(dst []uint8) (n int, err os.Error) {
   }
 
   // Ensures copy only if srcCap > 0
-  var srcCap uintptr = uintptr(p.diff-p.seek) + uintptr(1)
+  var srcCap uintptr = p.Cap()
   if srcCap == 0 {
     return 0, os.EINVAL
   }
@@ -152,7 +155,7 @@ func (p *Coffer) Read(dst []uint8) (n int, err os.Error) {
   }
   // else srcCap <= dstCap
   C.memmove(dstPtr, srcPtr, C.size_t(srcCap))
-  p.seek = p.diff
+  p.seek = p.Diff()
   p.eof = true
   return int(srcCap), os.EOF
 }
@@ -172,7 +175,7 @@ func (p *Coffer) Write(src []uint8) (n int, err os.Error) {
   }
 
   // Ensures copy only if dstCap > 0
-  var dstCap uintptr = uintptr(p.diff-p.seek) + uintptr(1)
+  var dstCap uintptr = p.Cap()
   if dstCap == 0 {
     return 0, os.EINVAL
   }
@@ -182,7 +185,7 @@ func (p *Coffer) Write(src []uint8) (n int, err os.Error) {
   dstPtr := Pointer(uintptr(p.start) + uintptr(p.seek))
   if srcCap >= dstCap {
     C.memmove(dstPtr, srcPtr, C.size_t(dstCap))
-    p.seek = p.diff
+    p.seek = p.Diff()
     p.eof = true
     return int(dstCap), os.EOF
   }
@@ -201,7 +204,6 @@ func (p *Coffer) Close() os.Error {
 	// Zero ptrs to avoid any lingering harm
 	p.start = uintptr(0)
 	p.limit = uintptr(0)
-	p.diff  = uintptr(0)
 	p.seek  = 0
 	p.eof   = true
 	p.fin   = true
