@@ -1,16 +1,16 @@
 // Package for copying between memory ranges managed by C code and Go Buffers
 package coffer
 
-import . "unsafe"
 import os "os"
-// import "fmt"
+import "unsafe"
+import "fmt"
 
 // #include <stdlib.h>
 // #include <string.h>
 import "C"
 
 // A Coffer implements the io.ReadWriteSeeker interface for
-// a memory range addressed by a pair of unsafe.Pointers
+// a memory range
 //
 // This allows direct copying between a C memory range
 // and a Go Buffer
@@ -18,52 +18,65 @@ import "C"
 // This struct is not thread-safe
 //
 type Coffer struct {
-  start uintptr // base pointer
-  seek  uintptr // offset value
-  limit uintptr // pointer to last element
-
-  // cant use seek > limit to test for eof due to potential overflow issues
-
-  eof bool // if set, has been reached, reset via Seak() issues
-  fin bool // if set, coffer has been closed, subsequent Read, Write, Seek will fail
+  base uintptr // base pointer
+  seek uintptr // current pointer
+  stop uintptr // pointer to last element
 }
 
 // Creates a new Coffer that allows reading the continous memory range between
-// startPtr and limitPtr
+// basePtr and basePtr + sz
 //
-// os.EINVAL if startPtr is 0 or startPrt >= limitPtr
-func NewCoffer(startPtr Pointer, limitPtr Pointer) (coffer *Coffer, err os.Error) {
-  start_ := uintptr(startPtr)
-  limit_ := uintptr(limitPtr)
-  // Makes life easier by avoiding that diff-start+1 could overflow
-  // Check Read() and Write()!
-  if start_ == uintptr(0) {
+// returns nil, os.EINVAL if basePtr is 0 or sz <= 0
+//
+func NewCoffer(base_ uintptr, sz int) (coffer *Coffer, err os.Error) {
+	// base == 0 is interpreted as closed state
+  if base_ == uintptr(0) {
     return nil, os.EINVAL
   }
-  if start_ > limit_ {
+
+	// sz must be positive
+  if sz <= 0 {
     coffer = nil
     err = os.EINVAL
     return
   }
-  return &Coffer{start: start_, limit: limit_}, nil
+
+	seek_ := base_
+  stop_ := uintptr(base_) + uintptr(sz - 1)
+
+  return &Coffer{base: base_, seek: seek_, stop: stop_}, nil
 }
 
+func (p *Coffer) String() string {
+	return fmt.Sprintf("&{base: %p, seek: %p, stop: %p} /* open := %t ; eof := %t; tell := %v; cap := %v */ ", p.base, p.seek, p.stop, p.IsOpen(), p.IsEOF(), p.Tell(), p.Cap())
+}
+
+
 // Current Seek position
-func (p *Coffer) Tell() int64 { return int64(p.seek) }
+//
+func (p *Coffer) Tell() int64 { 
+	if (p.IsEOF()) { return int64(p.Cap()) }
+	return int64(p.seek - p.base)
+}
 
 // Cap() - 1
-func (p *Coffer) Diff() uintptr { return p.limit - p.start }
+func (p *Coffer) Diff() int { return int(p.stop - p.base) }
 
 // Cap of the managed range, always >= 1
-func (p *Coffer) Cap() int64 { return int64(p.limit-p.start) + 1 }
+func (p *Coffer) Cap() int { return int(p.stop - p.base) + 1 }
 
 // Remaing bytes to be read or written
-func (p *Coffer) Len() uintptr { return p.limit - p.start + 1 - p.seek }
+func (p *Coffer) Len() int { 
+	if (p.Contains(p.seek)) {
+		return int(p.stop - p.seek) + 1
+	}
+	return 0
+}
 
 // true, iff EOF was enountered during a previous Read() or Write() call
 //
 // Seek() resets to false
-func (p *Coffer) IsEOF() bool { return p.eof }
+func (p *Coffer) IsEOF() bool { return (p.seek == uintptr(0)) }
 
 // true, iff offset is contained in managed memory range
 func (p *Coffer) ContainsOffset(offset int64) bool {
@@ -79,14 +92,13 @@ func (p *Coffer) EnsureContainsOffset(offset int64) {
   panic(os.EINVAL)
 }
 
-// true iff unsafe.Pointer(pos) is contained in memory range
-func (p *Coffer) Contains(posPtr Pointer) bool {
-  pos := uintptr(posPtr)
-  return (pos >= p.start && pos <= p.limit)
+// true iff pos is contained in memory range
+func (p *Coffer) Contains(pos uintptr) bool {
+  return (pos >= p.base && pos <= p.stop)
 }
 
-// panic(os.EINVAL) iff unsafe.Pointer(pos) is not contained in memory range
-func (p *Coffer) EnsureContains(pos Pointer) {
+// panic(os.EINVAL) iff pos is not contained in memory range
+func (p *Coffer) EnsureContains(pos uintptr) {
   if p.Contains(pos) {
     return
   }
@@ -96,69 +108,68 @@ func (p *Coffer) EnsureContains(pos Pointer) {
 
 // Compute an absolute seek position within this Coffer
 // (Parameters as in io.Seek)
+//
+// returns int64(p.seek), os.EINVAL iff whence is not in 0..2
 func (p *Coffer) SeekPos(whence int, offset int64) (ret int64, err os.Error) {
   var newOffset int64
   switch whence {
   default:
-    return int64(p.seek), os.EINVAL
+    return p.Tell(), os.EINVAL
   case 0:
     newOffset = offset
   case 1:
-    newOffset = int64(p.seek) + offset
+    newOffset = p.Tell() + offset
   case 2:
     newOffset = int64(p.Diff()) + offset
   }
   return newOffset, nil
 }
 
-// Regular seek except that you cannot append or prepend
-// (seek before start or behind the end)
+// If offset points outside the underlying managed memory range 
+// returns p.seek, os.EINVAL
 //
-// Clears EOF state
-//
-// If offset lies outside memory range returns current seek, os.EINVAL
+// If !p.IsOpen() returns p.seek, os.EINVAL
 func (p *Coffer) Seek(whence int, offset int64) (ret int64, err os.Error) {
-  if p.fin {
+  if !p.IsOpen() {
     return int64(p.seek), os.EINVAL
   }
   ret, err = p.SeekPos(whence, offset)
+	if (err != nil) { return ret, err }
   p.EnsureContainsOffset(ret)
-  p.seek = uintptr(ret)
-  p.eof = false
+  p.seek = p.base + uintptr(ret)
   return
 }
 
 func (p *Coffer) Read(dst []uint8) (n int, err os.Error) {
   // Bail out if EOF was hit before
-  if p.eof || p.fin {
+  if !p.IsOpen() || p.IsEOF() {
     return 0, os.EOF
   }
 
   // Ensure copy only if dstLen > 0
-  // assumes sizeof(uintptr) >= sizeof(int) which is the case
-  dstLen := uintptr(len(dst))
+  dstLen := len(dst)
   if dstLen == 0 {
     return 0, os.EINVAL
   }
 
   // Ensures copy only if srcLen > 0
-  var srcLen uintptr = p.Len()
+  srcLen := p.Len()
   if srcLen == 0 {
     return 0, os.EINVAL
   }
 
   // Copy min(dstLen, srcLen) > 0 bytes
-  srcPtr := Pointer(uintptr(p.start) + uintptr(p.seek))
-  dstPtr := Pointer(&dst[0])
+  srcPtr := unsafe.Pointer(p.seek)
+  dstPtr := unsafe.Pointer(&dst[0])
   if srcLen > dstLen {
     C.memmove(dstPtr, srcPtr, C.size_t(dstLen))
-    p.seek = p.seek + dstLen
+    p.seek = p.seek + uintptr(dstLen)
     return int(dstLen), nil
   }
   // else srcLen <= dstLen
   C.memmove(dstPtr, srcPtr, C.size_t(srcLen))
-  p.seek = p.Diff()
-  p.eof = true
+	// Mark EOF
+  p.seek = uintptr(0)
   return int(srcLen), os.EOF
 }
 
@@ -166,36 +177,40 @@ func (p *Coffer) Read(dst []uint8) (n int, err os.Error) {
 func (p *Coffer) Write(src []uint8) (n int, err os.Error) {
 
   // Bail out if EOF was hit before
-  if p.eof || p.fin {
+  if !p.IsOpen() || p.IsEOF() {
     return 0, os.EOF
   }
 
   // Ensure copy only if srcLen > 0
   // assumes sizeof(uintptr) >= sizeof(int) which is the case
-  srcLen := uintptr(len(src))
+  srcLen := len(src)
   if srcLen == 0 {
     return 0, os.EINVAL
   }
 
   // Ensures copy only if dstLen > 0
-  var dstLen uintptr = p.Len()
+  dstLen := p.Len()
   if dstLen == 0 {
     return 0, os.EINVAL
   }
 
   // Copy min(dstLen, srcLen) > 0 bytes
-  srcPtr := Pointer(&src[0])
-  dstPtr := Pointer(uintptr(p.start) + uintptr(p.seek))
+  srcPtr := unsafe.Pointer(&src[0])
+  dstPtr := unsafe.Pointer(p.seek)
   if srcLen >= dstLen {
     C.memmove(dstPtr, srcPtr, C.size_t(dstLen))
-    p.seek = p.Diff()
-    p.eof = true
+		// Mark EOF
+  	p.seek = uintptr(0)
     return int(dstLen), os.EOF
   }
   // else srcLen < dstLen
   C.memmove(dstPtr, srcPtr, C.size_t(srcLen))
-  p.seek = p.seek + srcLen
+  p.seek = p.seek + uintptr(srcLen)
   return int(srcLen), nil
+}
+
+func (p *Coffer) IsOpen() bool {
+	return (p.base != uintptr(0))
 }
 
 // Closes this coffer by zeroing all internal fields
@@ -205,11 +220,9 @@ func (p *Coffer) Write(src []uint8) (n int, err os.Error) {
 // Does not free any managed pointers
 func (p *Coffer) Close() os.Error {
   // Zero ptrs to avoid any lingering harm
-  p.start = uintptr(0)
-  p.limit = uintptr(0)
-  p.seek = 0
-  p.eof = true
-  p.fin = true
+  p.base = uintptr(0)
+  p.seek = uintptr(0)
+  p.stop = uintptr(0)
   return nil
 }
 
