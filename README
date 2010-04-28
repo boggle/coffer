@@ -1,10 +1,10 @@
-Coffer
-======
+Coffer 0.0.2
+============
 
 Small package for copying between a memory range managed
 by C code and Go Buffers.  
 
-Status: Totally untested right now :-)
+Status: Only barely tested right now but it appears to be working :-)
 
 Typical Usage:
 
@@ -12,11 +12,11 @@ import buffer
 import unsafe.coffer
 import io
 
-var startPtr unsafe.Pointer
-var endPtr unsafe.Pointer
+var start uintptr
+var sz int
 var buf io.Buffer
 
-coffer := coffer.NewCoffer(startPtr, endPtr)
+coffer := coffer.NewCoffer(start, sz)
 
 // Read Bytes from C
 buf.ReadFrom(coffer)

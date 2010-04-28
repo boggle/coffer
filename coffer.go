@@ -69,7 +69,7 @@ func (p *Coffer) Cap() int { return int(p.stop-p.base) + 1 }
 
 // Remaing bytes to be read or written
 func (p *Coffer) Len() int {
-  if p.Contains(p.seek) {
+  if p.IsOpen() && !p.IsEOF() {
     return int(p.stop-p.seek) + 1
   }
   return 0
