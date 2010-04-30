@@ -11,5 +11,7 @@ include $(GOROOT)/src/Make.pkg
 
 CLEANFILES+=main $(PKGDIR)/$(TARG).a
 
+again: clean install
+
 format: 
 	$(GOFMT) coffer.go
