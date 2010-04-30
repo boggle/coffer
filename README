@@ -4,6 +4,8 @@ Coffer 0.0.2
 Small package for copying between a memory range managed
 by C code and Go Buffers.  
 
+Requires installation of github.com/boggle/gonewrong
+
 Status: Only barely tested right now but it appears to be working :-)
 
 Typical Usage:
@@ -16,7 +18,7 @@ var start uintptr
 var sz int
 var buf io.Buffer
 
-coffer := coffer.NewCoffer(start, sz)
+coffer := coffer.NewPtrCoffer(start, sz)
 
 // Read Bytes from C
 buf.ReadFrom(coffer)
@@ -34,6 +36,11 @@ coffer.Seek(0, 0)
 // Subsequent Read, Write, or Seek will fail
 // Does *NOT* free
 coffer.Close()
+
+// Variant: Allocs using C.malloc and frees on Close()
+// (independent from Go's GC)
+coffer := coffer.NewMemCoffer(sz)
+Coffer.Close()
 
 // Have fun!
 
