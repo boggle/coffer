@@ -17,8 +17,8 @@ import "C"
 // This allows direct copying between a C memory range
 // and a Go Buffer
 type Coffer interface {
-	io.ReadWriteSeeker
-	io.Closer
+  io.ReadWriteSeeker
+  io.Closer
 }
 
 // Plain coffer on some memory range provided by the user
@@ -36,7 +36,7 @@ type PtrCoffer struct {
 //
 // returns nil, os.EINVAL if basePtr is 0 or sz <= 0
 //
-func NewPtrCoffer(base_ uintptr, sz int) (coffer Coffer, err os.Error) {
+func NewPtrCoffer(base_ uintptr, sz int) (coffer *PtrCoffer, err os.Error) {
   // base == 0 is interpreted as closed state
   if base_ == uintptr(0) {
     return nil, os.EINVAL
@@ -53,6 +53,28 @@ func NewPtrCoffer(base_ uintptr, sz int) (coffer Coffer, err os.Error) {
   stop_ := uintptr(base_) + uintptr(sz-1)
 
   return &PtrCoffer{base: base_, seek: seek_, stop: stop_}, nil
+}
+
+func (p *PtrCoffer) InitPtrCoffer(base_ uintptr, sz int) os.Error {
+  // base == 0 is interpreted as closed state
+  if base_ == uintptr(0) {
+    return os.EINVAL
+  }
+
+  // sz must be positive
+  if sz <= 0 {
+    return os.EINVAL
+  }
+
+  if p.IsOpen() {
+    return os.EINVAL
+  }
+
+  p.base = base_
+  p.seek = base_
+  p.stop = uintptr(base_) + uintptr(sz-1)
+
+  return nil
 }
 
 func (p *PtrCoffer) String() string {
@@ -240,33 +262,48 @@ func (p *PtrCoffer) Close() os.Error {
 
 // Selfallocating coffer via malloc, frees on Close()
 type MemCoffer struct {
-	PtrCoffer
+  PtrCoffer
 }
 
 // Allocate a coffer independent from the go runtime, i.e. you are responsible for freeing its mem content
 // by calling Close() (You get memory leaks iff you don't)
 func NewMemCoffer(sz int) (coffer Coffer, err os.Error) {
-	if (sz < 0) { return nil, os.EINVAL }
-	base_ := uintptr(C.malloc(C.size_t(sz)))
-	if IsCNullPtr(base_) { return nil, os.Errno(GetErrno()) }
+  if sz < 0 {
+    return nil, os.EINVAL
+  }
+  base_ := uintptr(C.malloc(C.size_t(sz)))
+  if IsCNullPtr(base_) {
+    return nil, os.Errno(GetErrno())
+  }
   seek_ := base_
   stop_ := uintptr(base_) + uintptr(sz-1)
 
   cf := new(MemCoffer)
-	cf.base = base_
-	cf.seek = seek_
+  cf.base = base_
+  cf.seek = seek_
   cf.stop = stop_
-	return coffer, nil
+  coffer = cf
+  return coffer, nil
 }
 
 func (p *MemCoffer) Close() os.Error {
-	if (p.IsEOF()) { return os.EOF }
+  if p.IsEOF() {
+    return os.EOF
+  }
   // Zero ptrs to avoid any lingering harm
-	C.free(unsafe.Pointer(p.base))
+  C.free(unsafe.Pointer(p.base))
   p.base = uintptr(0)
   p.seek = uintptr(0)
   p.stop = uintptr(0)
   return nil
+}
+
+func (p *PtrCoffer) GetBaseAddr() uintptr {
+	return p.base
+}
+
+func FreeMemCoffer(base unsafe.Pointer, hint unsafe.Pointer) {
+  ((*MemCoffer)(hint)).Close()
 }
 
 // {}
