@@ -9,6 +9,7 @@ import "io"
 
 // #include <stdlib.h>
 // #include <string.h>
+// #include "coffer.h"
 import "C"
 
 // A PtrCoffer implements the io.ReadWriteSeeker interface for
@@ -304,6 +305,10 @@ func (p *PtrCoffer) GetBaseAddr() uintptr {
 
 func FreeMemCoffer(base unsafe.Pointer, hint unsafe.Pointer) {
   ((*MemCoffer)(hint)).Close()
+}
+
+func CCallableFreeFuncPtr() unsafe.Pointer {
+	return C.coffer_addressof_free();
 }
 
 // {}
