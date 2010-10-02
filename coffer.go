@@ -9,7 +9,6 @@ import "io"
 
 // #include <stdlib.h>
 // #include <string.h>
-// #include "coffer.h"
 import "C"
 
 // A PtrCoffer implements the io.ReadWriteSeeker interface for
