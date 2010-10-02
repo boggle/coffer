@@ -269,6 +269,22 @@ func (p *PtrCoffer) Close() os.Error {
     return nil
 }
 
+// Retrieve base as uintptr
+func (p *PtrCoffer) GetBasePtr() uintptr {
+	return p.base
+}
+
+// Retrieve seek uintptr
+func (p *PtrCoffer) GetSeekPtr() uintptr {
+	return p.base
+}
+
+// Retrieve stop as uintptr
+func (p *PtrCoffer) GetStopPtr() uintptr {
+	return p.base
+}
+
+
 // Selfallocating coffer via malloc, frees on Close()
 type MemCoffer struct {
     PtrCoffer
@@ -309,18 +325,6 @@ func (p *MemCoffer) Close() os.Error {
     p.seek = uintptr(0)
     p.stop = uintptr(0)
     return nil
-}
-
-func (p *MemCoffer) GetBasePtr() uintptr {
-	return p.base
-}
-
-func (p *MemCoffer) GetSeekPtr() uintptr {
-	return p.base
-}
-
-func (p *MemCoffer) GetStopPtr() uintptr {
-	return p.base
 }
 
 // {}
