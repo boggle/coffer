@@ -19,6 +19,10 @@ import "C"
 type Coffer interface {
     io.ReadWriteSeeker
     io.Closer
+
+	GetBasePtr() uintptr
+	GetSeekPtr() uintptr
+	GetStopPtr() uintptr
 }
 
 // Plain coffer on some memory range provided by the user
@@ -305,6 +309,18 @@ func (p *MemCoffer) Close() os.Error {
     p.seek = uintptr(0)
     p.stop = uintptr(0)
     return nil
+}
+
+func (p *MemCoffer) GetBasePtr() uintptr {
+	return p.base
+}
+
+func (p *MemCoffer) GetSeekPtr() uintptr {
+	return p.base
+}
+
+func (p *MemCoffer) GetStopPtr() uintptr {
+	return p.base
 }
 
 // {}
