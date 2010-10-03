@@ -9,6 +9,7 @@ import "io"
 
 // #include <stdlib.h>
 // #include <string.h>
+// #include "coffer_cb.h"
 import "C"
 
 // A PtrCoffer implements the io.ReadWriteSeeker interface for
@@ -325,6 +326,11 @@ func (p *MemCoffer) Close() os.Error {
     p.seek = uintptr(0)
     p.stop = uintptr(0)
     return nil
+}
+
+//export CloseMemCoffer
+func CloseMemCoffer(base* int, p* MemCoffer) {
+    p.Close()
 }
 
 // {}
